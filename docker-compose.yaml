@@ -1,0 +1,10 @@
+services:
+  docufy:
+    build: .
+    container_name: docufy_cert_classifier
+    volumes:
+      - ./data:/home/appuser/app/data
+    command: ["python", "main.py", "data/dod-mandatory-CUI-traning-cert.pdf"]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
