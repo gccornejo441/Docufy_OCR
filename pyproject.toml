@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "docufy"
-version = "0.1.0"
+dynamic = ["version"]
 description = "OCR library"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -23,3 +23,6 @@ allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["docufy"]
+
+[tool.hatch.version]
+path = "docufy/__init__.py"
