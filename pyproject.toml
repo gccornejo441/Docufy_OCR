@@ -1,18 +1,25 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "docufy"
 version = "0.1.0"
-description = "Add your description here"
+description = "OCR library"
 readme = "README.md"
 requires-python = ">=3.12"
+licenses = "Apache-2.0"
+authors = [
+    { name = "gabe cornejo" }
+]
 dependencies = [
-    "fastapi>=0.116.1",
-    "pdf2image>=1.17.0",
-    "pdfplumber>=0.11.7",
     "pymupdf>=1.26.3",
     "pytesseract>=0.3.13",
+    "pillow>=10.0.0",
 ]
 
-[tool.uv.workspace]
-members = [
-    "markitdown",
-]
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["docufy"]
