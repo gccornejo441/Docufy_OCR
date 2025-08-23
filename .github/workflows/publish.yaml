@@ -2,7 +2,7 @@ name: Auto Bump & Publish
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "test"]
 
 jobs:
   bump-build-publish:
@@ -26,16 +26,23 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add pyproject.toml
-          git commit -m "ci: bump version [skip ci]"
+          git add -A
+          git commit -m "ci: bump version [skip ci]" || echo "No changes to commit"
           git push
 
       - name: Build package
         run: python -m build
 
       - name: Publish to TestPyPI
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/test'
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
         run: twine upload --repository testpypi dist/*
+
+      - name: Publish to PyPI
+        if: github.ref == 'refs/heads/main'
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: twine upload dist/*
