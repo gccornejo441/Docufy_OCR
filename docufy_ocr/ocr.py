@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 import fitz
+from PIL import Image
+from typing import Tuple
 from .utils import render_page_to_pil, auto_rotate_osd, ocr_with_variants, pack_words
 
 class DocuOCR:
@@ -11,7 +13,7 @@ class DocuOCR:
     def process_page(self, page: fitz.Page) -> tuple[str, list[dict]]:
         pil = render_page_to_pil(page, dpi=self.dpi)
         pil = auto_rotate_osd(pil)
-        result = ocr_with_variants(pil)
+        result = ocr_with_variants(pil, lang=self.lang, dpi=self.dpi)
         words = pack_words(result["data"]) if result["data"] else []
         return result["text"], words
 
@@ -45,3 +47,92 @@ class DocuOCR:
             json.dumps(words, ensure_ascii=False, indent=2),
             encoding="utf-8"
         )
+
+    @staticmethod
+    def _clamp01(v: float) -> float:
+        return 0.0 if v < 0 else 1.0 if v > 1 else v
+
+    @staticmethod
+    def _rect_unrotated_from_view_rotated(
+        x: float, y: float, w: float, h: float, rotation: int
+    ) -> Tuple[float, float, float, float]:
+        """Map a normalized rect from rotated-view space back to unrotated page space."""
+        rotation = rotation % 360
+        corners = [(x, y), (x + w, y), (x, y + h), (x + w, y + h)]
+
+        def inv_map(px: float, py: float) -> Tuple[float, float]:
+            if rotation == 0:
+                return px, py
+            if rotation == 90:
+                return py, 1.0 - px
+            if rotation == 180:
+                return 1.0 - px, 1.0 - py
+            if rotation == 270:
+                return 1.0 - py, px
+            return px, py
+
+        mapped = [inv_map(px, py) for (px, py) in corners]
+        xs = [DocuOCR._clamp01(mx) for mx in (m[0] for m in mapped)]
+        ys = [DocuOCR._clamp01(my) for my in (m[1] for m in mapped)]
+        x0, x1 = min(xs), max(xs)
+        y0, y1 = min(ys), max(ys)
+        return x0, y0, max(0.0, x1 - x0), max(0.0, y1 - y0)
+
+    def _render_region_to_pil(
+        self, page: fitz.Page, rect_norm_unrotated: Tuple[float, float, float, float]
+    ) -> Image.Image:
+        """Render a normalized unrotated page rect to a PIL image at self.dpi."""
+        x, y, w, h = rect_norm_unrotated
+        if w <= 0 or h <= 0:
+            raise ValueError("Selection has zero area.")
+        pr = page.rect
+        clip = fitz.Rect(
+            pr.x0 + x * pr.width,
+            pr.y0 + y * pr.height,
+            pr.x0 + (x + w) * pr.width,
+            pr.y0 + (y + h) * pr.height,
+        )
+        mat = fitz.Matrix(self.dpi / 72.0, self.dpi / 72.0)
+        pix = page.get_pixmap(matrix=mat, clip=clip, alpha=False)
+        mode = "RGBA" if pix.alpha else "RGB"
+        img = Image.frombytes(mode, (pix.width, pix.height), pix.samples)
+        if mode == "RGBA":
+            img = img.convert("RGB")
+        return img
+
+    def process_page_region(
+        self,
+        page: fitz.Page,
+        rect_norm_view: Tuple[float, float, float, float],
+        rotation_view: int = 0,
+    ) -> tuple[str, list[dict]]:
+        """OCR only the selected region of the page.
+        rect_norm_view is (x,y,w,h) in [0..1] relative to the **rotated** viewer.
+        """
+        x, y, w, h = rect_norm_view
+        x = self._clamp01(x); y = self._clamp01(y); w = self._clamp01(w); h = self._clamp01(h)
+        xr, yr, wr, hr = self._rect_unrotated_from_view_rotated(x, y, w, h, rotation_view)
+        if wr == 0 or hr == 0:
+            return "", []
+        pil = self._render_region_to_pil(page, (xr, yr, wr, hr))
+        pil = auto_rotate_osd(pil)
+        result = ocr_with_variants(pil, lang=self.lang, dpi=self.dpi) 
+        words = pack_words(result["data"]) if result["data"] else []
+        return result["text"], words
+
+    def process_pdf_region(
+        self,
+        pdf_path: Path,
+        page_number: int,
+        rect_norm_view: Tuple[float, float, float, float],
+        rotation_view: int = 0,
+    ) -> tuple[str, list[dict]]:
+        """Open the PDF, run region OCR on the 1-based page_number."""
+        if page_number < 1:
+            raise ValueError("page_number must be 1-based.")
+        with fitz.open(pdf_path) as doc:
+            idx = page_number - 1
+            if idx < 0 or idx >= len(doc):
+                raise ValueError("Page index out of range.")
+            page = doc[idx]
+            return self.process_page_region(page, rect_norm_view, rotation_view)
