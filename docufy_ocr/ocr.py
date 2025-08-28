@@ -5,6 +5,7 @@ from PIL import Image
 from typing import Tuple
 from .utils import render_page_to_pil, auto_rotate_osd, ocr_with_variants, pack_words
 
+
 class DocuOCR:
     def __init__(self, dpi: int = 360, lang: str = "eng"):
         self.dpi = dpi
@@ -24,7 +25,8 @@ class DocuOCR:
                 raw_pages = []
                 words_stub = []
                 for i, page in enumerate(doc, 1):
-                    raw_pages.append(f"\n=== Page {i} ===\n{page.get_text('text')}")
+                    raw_pages.append(
+                        f"\n=== Page {i} ===\n{page.get_text('text')}")
                     words_stub.append({"page": i, "words": []})
                 return "".join(raw_pages), words_stub
 
@@ -40,7 +42,8 @@ class DocuOCR:
     def save_results(self, pdf_path: Path, outdir: Path):
         raw_text, words = self.process_pdf(pdf_path)
         outdir.mkdir(parents=True, exist_ok=True)
-        (outdir / f"{pdf_path.stem}_ocr.txt").write_text(raw_text, encoding="utf-8")
+        (outdir / f"{pdf_path.stem}_ocr.txt").write_text(raw_text,
+                                                         encoding="utf-8")
         (outdir / f"{pdf_path.stem}_ocr_words.json").write_text(
             json.dumps(words, ensure_ascii=False, indent=2),
             encoding="utf-8"
@@ -104,11 +107,17 @@ class DocuOCR:
     ) -> tuple[str, list[dict]]:
         rotation_view = rotation_view % 360
         x, y, w, h = rect_norm_view
-        x = self._clamp01(x); y = self._clamp01(y); w = self._clamp01(w); h = self._clamp01(h)
-        xr, yr, wr, hr = self._rect_unrotated_from_view_rotated(x, y, w, h, rotation_view)
+        x = self._clamp01(x)
+        y = self._clamp01(y)
+        w = self._clamp01(w)
+        h = self._clamp01(h)
+        xr, yr, wr, hr = self._rect_unrotated_from_view_rotated(
+            x, y, w, h, rotation_view)
         if wr == 0 or hr == 0:
             return "", []
         pil = self._render_region_to_pil(page, (xr, yr, wr, hr))
+        if rotation_view:
+            pil = pil.rotate(-rotation_view, expand=True)
         result = ocr_with_variants(pil, lang=self.lang, dpi=self.dpi)
         words = pack_words(result["data"]) if result["data"] else []
         return result["text"], words
