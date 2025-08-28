@@ -18,7 +18,6 @@ class DocuOCR:
         return result["text"], words
 
     def process_pdf(self, pdf_path: Path) -> tuple[str, list[dict]]:
-        """OCR entire PDF, return raw text + words per page."""
         with fitz.open(pdf_path) as doc:
             has_text = any(page.get_text("text").strip() for page in doc)
             if has_text:
@@ -39,7 +38,6 @@ class DocuOCR:
         return "".join(raw_pages), words_per_page
 
     def save_results(self, pdf_path: Path, outdir: Path):
-        """Run OCR and save results to TXT + JSON files."""
         raw_text, words = self.process_pdf(pdf_path)
         outdir.mkdir(parents=True, exist_ok=True)
         (outdir / f"{pdf_path.stem}_ocr.txt").write_text(raw_text, encoding="utf-8")
@@ -56,7 +54,6 @@ class DocuOCR:
     def _rect_unrotated_from_view_rotated(
         x: float, y: float, w: float, h: float, rotation: int
     ) -> Tuple[float, float, float, float]:
-        """Map a normalized rect from rotated-view space back to unrotated page space."""
         rotation = rotation % 360
         corners = [(x, y), (x + w, y), (x, y + h), (x + w, y + h)]
 
@@ -72,8 +69,8 @@ class DocuOCR:
             return px, py
 
         mapped = [inv_map(px, py) for (px, py) in corners]
-        xs = [DocuOCR._clamp01(mx) for mx in (m[0] for m in mapped)]
-        ys = [DocuOCR._clamp01(my) for my in (m[1] for m in mapped)]
+        xs = [DocuOCR._clamp01(mx) for mx, _ in mapped]
+        ys = [DocuOCR._clamp01(my) for _, my in mapped]
         x0, x1 = min(xs), max(xs)
         y0, y1 = min(ys), max(ys)
         return x0, y0, max(0.0, x1 - x0), max(0.0, y1 - y0)
@@ -81,7 +78,6 @@ class DocuOCR:
     def _render_region_to_pil(
         self, page: fitz.Page, rect_norm_unrotated: Tuple[float, float, float, float]
     ) -> Image.Image:
-        """Render a normalized unrotated page rect to a PIL image at self.dpi."""
         x, y, w, h = rect_norm_unrotated
         if w <= 0 or h <= 0:
             raise ValueError("Selection has zero area.")
@@ -106,17 +102,14 @@ class DocuOCR:
         rect_norm_view: Tuple[float, float, float, float],
         rotation_view: int = 0,
     ) -> tuple[str, list[dict]]:
-        """OCR only the selected region of the page.
-        rect_norm_view is (x,y,w,h) in [0..1] relative to the **rotated** viewer.
-        """
+        rotation_view = rotation_view % 360
         x, y, w, h = rect_norm_view
         x = self._clamp01(x); y = self._clamp01(y); w = self._clamp01(w); h = self._clamp01(h)
         xr, yr, wr, hr = self._rect_unrotated_from_view_rotated(x, y, w, h, rotation_view)
         if wr == 0 or hr == 0:
             return "", []
         pil = self._render_region_to_pil(page, (xr, yr, wr, hr))
-        pil = auto_rotate_osd(pil)
-        result = ocr_with_variants(pil, lang=self.lang, dpi=self.dpi) 
+        result = ocr_with_variants(pil, lang=self.lang, dpi=self.dpi)
         words = pack_words(result["data"]) if result["data"] else []
         return result["text"], words
 
@@ -127,7 +120,7 @@ class DocuOCR:
         rect_norm_view: Tuple[float, float, float, float],
         rotation_view: int = 0,
     ) -> tuple[str, list[dict]]:
-        """Open the PDF, run region OCR on the 1-based page_number."""
+        rotation_view = rotation_view % 360
         if page_number < 1:
             raise ValueError("page_number must be 1-based.")
         with fitz.open(pdf_path) as doc:
